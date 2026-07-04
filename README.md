@@ -1,29 +1,33 @@
 # Inim Client (Inim to MQTT Hub)
 
-`inimclient` è un servizio demone scritto in Go che funge da bridge tra i server di **Inim Cloud** e un broker **MQTT** locale (ad esempio, Mosquitto gestito come add-on all'interno di Home Assistant). 
-Questo bridge consente di integrare la centrale di allarme Inim in Home Assistant, permettendo di leggerne gli stati e di attivare gli scenari definiti.
+Questo repository contiene due implementazioni per interfacciare la tua centrale di allarme **Inim** (tramite Inim Cloud) a un broker **MQTT** locale (es. Mosquitto integrato in Home Assistant):
+
+1. **Versione Python (`inim_mqtt_bridge.py`) [CONSIGLIATA]**: 
+   * Scritta da zero in Python.
+   * Totalmente open-source, leggera e facilmente personalizzabile/debuggabile.
+   * Gestisce in modo nativo il protocollo WebSocket con keep-alive automatico, garantendo **stabilità assoluta senza crash**.
+2. **Versione Go (`inimclient`)**: 
+   * Il binario pre-compilato originale.
+   * Presenta un bug noto del compilatore Go durante la gestione dei tentativi di riconnessione WebSocket che lo porta a crashare ogni 60 secondi in caso di disconnessione (generando elevato traffico di riavvii e potenziale ban dell'account).
 
 ---
 
 ## Struttura del Progetto
 
-Il progetto si compone di:
-1. **`inimclient`**: Il binario Go (compilato staticamente per architetture ELF 64-bit Linux).
-2. **`config.yaml`**: Il file di configurazione con i parametri MQTT e le credenziali cifrate per Inim Cloud.
-3. **`encrypt.py`**: Script di utilità in Python per cifrare le nuove credenziali Inim da inserire nel file di configurazione.
-4. **`inimclient.service`**: File di configurazione per il demone systemd (con politiche di hardening e sicurezza).
-5. **Regola logrotate**: Configurazione per la rotazione e compressione automatica dei log di runtime.
+* **`inim_mqtt_bridge.py`**: Il codice sorgente del bridge Python.
+* **`inimclient`**: Il binario compilato Go originale (backup).
+* **`encrypt.py`**: Script di utilità in Python per cifrare le nuove credenziali Inim da inserire nel file di configurazione `config.yaml`.
+* **`config.yaml`**: Struttura dei parametri MQTT e credenziali Inim Cloud.
 
 ---
 
 ## Configurazione (`config.yaml`)
 
-Il file di configurazione deve essere posizionato nella cartella `/srv/inim-hub/config.yaml`.
-Ecco un esempio di configurazione tipo:
+Il file di configurazione deve essere posizionato in `/srv/inim-hub/config.yaml`:
 
 ```yaml
 mqtt:
-  host: "127.0.0.1" # IP del broker MQTT
+  host: "192.168.1.250" # IP del broker MQTT
   port: 1883
   user: "mqttuser"
   password: "mqttpassword"
@@ -41,36 +45,51 @@ log:
   level: "INFO" # INFO per uso normale, DEBUG in fase di risoluzione problemi
 ```
 
-### Gestione Credenziali (Cifratura AES-256-CBC)
-Le credenziali (`username` e `password`) per connettersi ad Inim Cloud devono essere cifrate utilizzando l'algoritmo AES-256-CBC con la chiave fissa integrata all'interno del client.
-
-Per cifrare una stringa (es. quando cambi la tua password di Inim), usa lo script Python `encrypt.py` incluso in questo repository:
-
+### Cifratura delle Credenziali
+Le credenziali Inim devono essere cifrate in AES-256-CBC tramite lo script `encrypt.py`:
 ```bash
-python3 encrypt.py "mia_nuova_password"
+python3 encrypt.py "mia_password"
 ```
-
-Lo script restituirà la stringa cifrata in Base64 da copiare e incollare all'interno del file `config.yaml`.
+Copia il valore Base64 restituito all'interno della sezione `username` e `password` in `config.yaml`.
 
 ---
 
-## Installazione sulla VM
+## Installazione della Versione Python
 
-### 1. File di Servizio Systemd
-Crea il file `/etc/systemd/system/inimclient.service` con la seguente configurazione di sicurezza ed isolamento:
+### 1. Prerequisiti sulla VM Debian/Ubuntu
+Installa le dipendenze Python necessarie tramite il gestore di pacchetti del sistema:
+```bash
+sudo apt-get update
+sudo apt-get install -y python3-websockets python3-yaml python3-paho-mqtt
+```
+
+### 2. Copia i file nella cartella `/srv/inim-hub/`
+Assicurati che i file siano posizionati in `/srv/inim-hub/`:
+* `/srv/inim-hub/inim_mqtt_bridge.py`
+* `/srv/inim-hub/config.yaml`
+
+Imposta i permessi corretti per proteggere le credenziali:
+```bash
+sudo chown -R administrator:administrator /srv/inim-hub
+sudo chmod 600 /srv/inim-hub/config.yaml
+sudo chmod 700 /srv/inim-hub/inim_mqtt_bridge.py
+```
+
+### 3. File di Servizio Systemd (`inim-python.service`)
+Crea il file `/etc/systemd/system/inim-python.service`:
 
 ```ini
 [Unit]
-Description=Inim hub to mqtt
+Description=Inim hub to mqtt (Python Version)
 After=network.target
 
 [Service]
 Type=simple
 User=administrator
-ExecStart=/srv/inim-hub/inimclient
+ExecStart=/usr/bin/python3 /srv/inim-hub/inim_mqtt_bridge.py
 WorkingDirectory=/srv/inim-hub/
 Restart=on-failure
-RestartSec=300
+RestartSec=60
 
 # Security Hardening (Isolamento)
 ProtectSystem=strict
@@ -83,78 +102,35 @@ ReadWritePaths=/srv/inim-hub
 WantedBy=multi-user.target
 ```
 
-Ricarica il demone per applicare la nuova configurazione:
+Attiva ed avvia il servizio:
 ```bash
 sudo systemctl daemon-reload
-```
-
-### 2. Permessi di Sicurezza
-Per garantire la sicurezza delle credenziali, assegna la proprietà dei file all'utente che esegue il servizio (es. `administrator`) e imposta permessi restrittivi:
-
-```bash
-# Assegna la proprietà della cartella e del config
-sudo chown -R administrator:administrator /srv/inim-hub
-# Rendi config.yaml leggibile solo dall'utente proprietario
-sudo chmod 600 /srv/inim-hub/config.yaml
-# Consenti la scrittura della cartella log
-sudo chmod -R 700 /srv/inim-hub/log
-```
-
-### 3. Rotazione dei Log (`logrotate`)
-Per evitare che il file `/srv/inim-hub/log/log.log` riempia lo spazio sul disco della VM, configura logrotate creando il file `/etc/logrotate.d/inimclient`:
-
-```logrotate
-/srv/inim-hub/log/log.log {
-    daily
-    rotate 7
-    compress
-    delaycompress
-    missingok
-    notifempty
-    copytruncate
-}
+sudo systemctl enable inim-python.service
+sudo systemctl start inim-python.service
 ```
 
 ---
 
-## Comandi di Gestione Servizio
+## Comandi utili di manutenzione
 
-* **Avviare il servizio:**
-  ```bash
-  sudo systemctl start inimclient.service
-  ```
-* **Fermare il servizio:**
-  ```bash
-  sudo systemctl stop inimclient.service
-  ```
-* **Riavviare il servizio:**
-  ```bash
-  sudo systemctl restart inimclient.service
-  ```
 * **Verificare lo stato del servizio:**
   ```bash
-  systemctl status inimclient.service
+  systemctl status inim-python.service
   ```
-* **Vedere i log in tempo reale (systemd):**
+* **Controllare i log di sistema:**
   ```bash
-  journalctl -u inimclient.service -f
+  journalctl -u inim-python.service -f
   ```
-* **Vedere i log di runtime di inimclient:**
+* **Visualizzare il file di log del bridge:**
   ```bash
-  tail -f /srv/inim-hub/log/log.log
+  tail -f /srv/inim-hub/log/python_bridge.log
   ```
 
 ---
 
-## Integrazione con Home Assistant (MQTT)
+## Integrazione con Home Assistant
 
-La centrale pubblica e riceve comandi tramite MQTT.
-
-### Esempio di Armamento / Disarmamento (Scenari)
-Per attivare uno scenario specifico (ad esempio lo Scenario `0`), invia un comando sul topic MQTT:
-* **Topic:** `homeassistant/binary_sensor/inim_scenario_0/command`
-
-Puoi configurare Script e Automazioni all'interno di Home Assistant:
+La versione Python è perfettamente retrocompatibile con la precedente versione Go. Mantiene lo stesso schema dei topic MQTT ed espone i sensori e i comandi di armamento in modo trasparente.
 
 **Esempio di Script (`scripts.yaml`):**
 ```yaml
