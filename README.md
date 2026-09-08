@@ -141,9 +141,71 @@ Because every installation has different scenario names and configurations, you 
 | Platform | Entity Name | Description |
 | :--- | :--- | :--- |
 | `alarm_control_panel` | `alarm_control_panel.inim_alarm_<id>` | Full alarm control with Arm Away, Arm Home, Arm Night, and Disarm controls. |
+| `button` | `button.<scenario_name>` | Dedicated one-click button for each native scenario (e.g. *ON TOTALE*, *SPENTO*). |
 | `select` | `select.inim_alarm_<id>_scenario` | Dropdown selector displaying and activating any panel scenario directly. |
 | `binary_sensor` | `binary_sensor.inim_fault_sensor_<id>` | Diagnostic sensor reporting trouble, tamper, or fault states on the panel. |
 | `binary_sensor` | `binary_sensor.inim_zone_<id>_<zone_id>` | Individual physical zone sensors (Door, Window, Motion) with open/alarm states. |
+
+---
+
+## Automation Examples
+
+Home Assistant allows you to automate your Inim alarm either using the user interface or YAML.
+
+### 1. Activating a Specific Scenario (Recommended)
+
+Each scenario has its own dedicated **Button** entity, making automations extremely straightforward.
+
+**Via UI:**
+* **Action:** Select **Device** > Choose your **Inim Alarm** > Action: **Press `<Scenario Name>`** (e.g. *Press ON TOTALE*).
+
+**Via YAML:**
+```yaml
+alias: "Alarm - Arm Night Scenario at 23:00"
+trigger:
+  - trigger: time
+    at: "23:00:00"
+action:
+  - action: button.press
+    target:
+      entity_id: button.no_camere
+```
+
+### 2. Standard Alarm Arming / Disarming
+
+You can also use standard alarm services mapped to your configured scenarios.
+
+**Via YAML:**
+```yaml
+alias: "Alarm - Disarm when arriving home"
+trigger:
+  - trigger: zone
+    entity_id: person.admin
+    zone: zone.home
+    event: enter
+action:
+  - action: alarm_control_panel.alarm_disarm
+    target:
+      entity_id: alarm_control_panel.inim_alarm_panel_1202
+```
+
+### 3. Send a Notification on Trouble / Tamper
+
+Receive an instant smartphone notification if the central reports any fault or tamper event:
+
+**Via YAML:**
+```yaml
+alias: "Notification - Inim Alarm Trouble Detected"
+trigger:
+  - trigger: state
+    entity_id: binary_sensor.problema_centrale
+    to: "on"
+action:
+  - action: notify.notify
+    data:
+      title: "Inim Alarm Warning"
+      message: "The alarm panel has reported a fault or tamper state!"
+```
 
 ---
 
