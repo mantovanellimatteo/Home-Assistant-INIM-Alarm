@@ -12,6 +12,7 @@ PLATFORMS = [
     Platform.ALARM_CONTROL_PANEL,
     Platform.SELECT,
     Platform.BINARY_SENSOR,
+    Platform.BUTTON,
 ]
 
 # Configuration keys
