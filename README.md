@@ -10,6 +10,10 @@ A native, secure, and universal Home Assistant integration for **Inim Electronic
 
 Eliminates the need for MQTT brokers, legacy bridges, or external daemons.
 
+<p align="center">
+  <img src="images/screenshot.png" alt="Inim Cloud Device in Home Assistant" width="800">
+</p>
+
 ---
 
 ## Key Features
