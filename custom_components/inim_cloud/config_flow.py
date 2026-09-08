@@ -98,14 +98,11 @@ class InimConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
         """Return options flow handler to map scenarios."""
-        return InimOptionsFlowHandler(config_entry)
+        return InimOptionsFlowHandler()
 
 
 class InimOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle options flow to configure scenario mappings."""
-
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self.config_entry = config_entry
 
     async def async_step_init(
         self, user_input: Optional[Dict[str, Any]] = None
