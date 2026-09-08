@@ -1,0 +1,13 @@
+{
+  "domain": "inim_cloud",
+  "name": "Inim Cloud",
+  "codeowners": ["@mantovanellimatteo"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/mantovanellimatteo/inimclient",
+  "integration_type": "hub",
+  "iot_class": "cloud_push",
+  "issue_tracker": "https://github.com/mantovanellimatteo/inimclient/issues",
+  "requirements": ["cryptography>=3.0"],
+  "version": "1.0.0"
+}

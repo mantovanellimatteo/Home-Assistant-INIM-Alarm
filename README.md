@@ -1,144 +1,87 @@
-# Inim Client (Inim to MQTT Hub)
+# Inim Cloud per Home Assistant
 
-Questo repository contiene due implementazioni per interfacciare la tua centrale di allarme **Inim** (tramite Inim Cloud) a un broker **MQTT** locale (es. Mosquitto integrato in Home Assistant):
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/default)
+[![Security: AES-Fernet](https://img.shields.io/badge/Security-AES--Fernet%20Encrypted-green.svg)](#sicurezza-e-privacy)
+[![Protocol: WSS Push](https://img.shields.io/badge/Protocol-TLS%20%2F%20WSS%20Realtime-blue.svg)](#comunicazioni-cifrate)
 
-1. **Versione Python (`inim_mqtt_bridge.py`) [CONSIGLIATA]**: 
-   * Scritta da zero in Python.
-   * Totalmente open-source, leggera e facilmente personalizzabile/debuggabile.
-   * Gestisce in modo nativo il protocollo WebSocket con keep-alive automatico, garantendo **stabilità assoluta senza crash**.
-2. **Versione Go (`inimclient`)**: 
-   * Il binario pre-compilato originale.
-   * Presenta un bug noto del compilatore Go durante la gestione dei tentativi di riconnessione WebSocket che lo porta a crashare ogni 60 secondi in caso di disconnessione (generando elevato traffico di riavvii e potenziale ban dell'account).
+Integrazione universale e sicura per centrali di allarme **Inim Electronics** (SmartLiving, Prime, Sol, ecc.) con **Home Assistant**.
 
----
-
-## Struttura del Progetto
-
-* **`inim_mqtt_bridge.py`**: Il codice sorgente del bridge Python.
-* **`inimclient`**: Il binario compilato Go originale (backup).
-* **`encrypt.py`**: Script di utilità in Python per cifrare le nuove credenziali Inim da inserire nel file di configurazione `config.yaml`.
-* **`config.yaml`**: Struttura dei parametri MQTT e credenziali Inim Cloud.
-
----
-
-## Configurazione (`config.yaml`)
-
-Il file di configurazione deve essere posizionato in `/srv/inim-hub/config.yaml`:
-
-```yaml
-mqtt:
-  host: "192.168.1.250" # IP del broker MQTT
-  port: 1883
-  user: "mqttuser"
-  password: "mqttpassword"
-
-inim:
-  username: "<encrypted_username_base64>"
-  password: "<encrypted_password_base64>"
-  client-id: "home-9BF57085-7E85-FB85-C06C-B5C8CFD93C85"
-  scenarios:
-    - 0
-    - 2
-    - 4
-
-log:
-  level: "INFO" # INFO per uso normale, DEBUG in fase di risoluzione problemi
-```
-
-### Cifratura delle Credenziali
-Le credenziali Inim devono essere cifrate in AES-256-CBC tramite lo script `encrypt.py`:
-```bash
-python3 encrypt.py "mia_password"
-```
-Copia il valore Base64 restituito all'interno della sezione `username` e `password` in `config.yaml`.
+Questo repository include:
+1. **Integrazione Nativa Home Assistant (`custom_components/inim_cloud`) [CONSIGLIATA]**:
+   * Dialoga **direttamente con Inim Cloud** eliminando intermediari come broker MQTT o demoni esterni.
+   * **100% Universale:** importa dinamicamente qualsiasi centrale, scenario e sensore di zona del tuo account.
+   * **Cifratura delle credenziali a riposo:** password cifrata con AES-Fernet e legata all'identificativo crittografico univoco della tua istanza Home Assistant.
+   * **Eventi Real-Time via WebSocket (WSS):** aggiornamenti istantanei push non appena si attiva un allarme o cambia scenario.
+   * **Options Flow da UI:** mappatura scenari personalizzabile con menu a tendina direttamente dall'interfaccia grafica.
+   * **Entità Allarme Nativa (`alarm_control_panel`):** tastierino a schermo nativo in Lovelace, supporto codici PIN e integrazione con Apple HomeKit, Google Home e Alexa.
+   * **Selettore Scenari Illimitato (`select`):** per attivare direttamente qualsiasi scenario presente sulla centrale.
+   * **Sensori di Zona Fisici (`binary_sensor`):** porte, finestre e sensori di movimento PIR visibili come entità native.
+2. **Bridge Standalone MQTT (`inim_mqtt_bridge.py`)**:
+   * La soluzione standalone precedente in Python/MQTT, conservata per retrocompatibilità.
 
 ---
 
-## Installazione della Versione Python
+## Sicurezza e Privacy
 
-### 1. Prerequisiti sulla VM Debian/Ubuntu
-Installa le dipendenze Python necessarie tramite il gestore di pacchetti del sistema:
-```bash
-sudo apt-get update
-sudo apt-get install -y python3-websockets python3-yaml python3-paho-mqtt
-```
+L'integrazione è stata progettata con un focus primario sulla protezione dei dati:
 
-### 2. Copia i file nella cartella `/srv/inim-hub/`
-Assicurati che i file siano posizionati in `/srv/inim-hub/`:
-* `/srv/inim-hub/inim_mqtt_bridge.py`
-* `/srv/inim-hub/config.yaml`
-
-Imposta i permessi corretti per proteggere le credenziali:
-```bash
-sudo chown -R administrator:administrator /srv/inim-hub
-sudo chmod 600 /srv/inim-hub/config.yaml
-sudo chmod 700 /srv/inim-hub/inim_mqtt_bridge.py
-```
-
-### 3. File di Servizio Systemd (`inim-python.service`)
-Crea il file `/etc/systemd/system/inim-python.service`:
-
-```ini
-[Unit]
-Description=Inim hub to mqtt (Python Version)
-After=network.target
-
-[Service]
-Type=simple
-User=administrator
-ExecStart=/usr/bin/python3 /srv/inim-hub/inim_mqtt_bridge.py
-WorkingDirectory=/srv/inim-hub/
-Restart=on-failure
-RestartSec=60
-
-# Security Hardening (Isolamento)
-ProtectSystem=strict
-ProtectHome=yes
-PrivateTmp=yes
-NoNewPrivileges=yes
-ReadWritePaths=/srv/inim-hub
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Attiva ed avvia il servizio:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable inim-python.service
-sudo systemctl start inim-python.service
-```
+* **Cifratura in Transito Rigorosa (TLS/HTTPS & WSS):**
+  Tutte le comunicazioni avvengono tramite canali TLS con verifica rigorosa della catena dei certificati X.509 della CA. Nessun certificato autofirmato o bypass `CERT_NONE`.
+* **Cifratura a Riposo delle Credenziali (AES-Fernet):**
+  La password non viene mai salvata in chiaro nei file di configurazione (`core.config_entries`). Viene cifrata localmente con una chiave crittografica derivata dall'UUID univoco dell'istanza Home Assistant (`hass.data['core.uuid']`). Anche in caso di esportazione di backup non protetti, le credenziali rimangono indecifrabili.
+* **Token di Sessione Temporaneo:**
+  La password decifrata viene utilizzata in memoria volatile solo per il login iniziale (`RegisterClient`). Tutte le successive interrogazioni usano esclusivamente il token temporaneo di sessione.
+* **Sanitizzazione Automatica dei Log:**
+  Password, PIN e token vengono automaticamente oscurati (`***REDACTED***`) per prevenire fughe di dati anche se il livello di log viene impostato a `DEBUG`.
 
 ---
 
-## Comandi utili di manutenzione
+## Installazione Integrazione Nativa
 
-* **Verificare lo stato del servizio:**
-  ```bash
-  systemctl status inim-python.service
-  ```
-* **Controllare i log di sistema:**
-  ```bash
-  journalctl -u inim-python.service -f
-  ```
-* **Visualizzare il file di log del bridge:**
-  ```bash
-  tail -f /srv/inim-hub/log/python_bridge.log
-  ```
+### Metodo 1: Tramite HACS (Consigliato per utenti terzi)
+1. Apri **HACS** in Home Assistant.
+2. Clicca sui tre puntini in alto a destra e seleziona **Repository personalizzati**.
+3. Incolla l'URL del repository: `https://github.com/mantovanellimatteo/inimclient`.
+4. Come categoria seleziona **Integrazione**.
+5. Clicca su **Scarica** e riavvia Home Assistant.
+
+### Metodo 2: Installazione Manuale
+1. Copia la cartella `custom_components/inim_cloud/` nella cartella `custom_components/` della tua installazione di Home Assistant (es. `/config/custom_components/inim_cloud/`).
+2. Riavvia Home Assistant.
 
 ---
 
-## Integrazione con Home Assistant
+## Configurazione
 
-La versione Python è perfettamente retrocompatibile con la precedente versione Go. Mantiene lo stesso schema dei topic MQTT ed espone i sensori e i comandi di armamento in modo trasparente.
+1. In Home Assistant, vai su **Impostazioni → Dispositivi e Servizi → Aggiungi Integrazione**.
+2. Cerca **Inim Cloud** e selezionalo.
+3. Inserisci il tuo **Username / Email** e la **Password** del tuo account Inim Cloud.
+4. Clicca su **Invia**: Home Assistant convaliderà le credenziali, importerà automaticamente le centrali, gli scenari e i sensori di zona.
 
-**Esempio di Script (`scripts.yaml`):**
-```yaml
-allarme_inim_on:
-  alias: "Attiva Allarme (Scenario 0)"
-  sequence:
-    - action: mqtt.publish
-      data:
-        topic: "homeassistant/binary_sensor/inim_scenario_0/command"
-        payload: "ON"
-```
+### Personalizzare la Mappatura degli Scenari (Options Flow)
+Ogni centrale può avere nomi e scenari diversi. Per associare i tuoi scenari agli stati standard del pannello allarme di Home Assistant:
+1. Vai su **Impostazioni → Dispositivi e Servizi → Inim Cloud**.
+2. Clicca sul pulsante **Configura**.
+3. Seleziona dai menu a tendina quale scenario associare a:
+   * **Disarmato** (es. *SPENTO*)
+   * **Armato Fuori Casa / Totale** (es. *ON TOTALE*)
+   * **Armato In Casa / Parziale** (es. *NO CAMERE* o *NO BAGNO*)
+   * **Armato Notte**
+   * **Armato Vacanza**
+4. Salva: le modifiche saranno attive immediatamente senza necessità di riavvio.
+
+---
+
+## Entità Esposte
+
+| Piattaforma | Descrizione |
+| :--- | :--- |
+| `alarm_control_panel` | Pannello principale allarme con stati (*Disarmato*, *Armato Totale*, *Armato Casa*) e tastierino numerico. |
+| `select` | Menu a tendina contenente **tutti** gli scenari della centrale per attivarne uno al volo. |
+| `binary_sensor` (Guasto) | Sensore diagnostico per rilevare allarmi, manomissioni o guasti generali della centrale. |
+| `binary_sensor` (Zone) | Sensori per le singole zone fisiche (porte, finestre, sensori PIR volumetrici rilevati dalla centrale). |
+
+---
+
+## Autori e Licenza
+Sviluppato da [Matteo Mantovanelli](https://github.com/mantovanellimatteo). Rilasciato sotto licenza MIT.

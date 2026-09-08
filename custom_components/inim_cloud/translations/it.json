@@ -1,0 +1,37 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Autenticazione Inim Cloud",
+        "description": "Inserisci le credenziali del tuo account Inim Cloud per connettere la centrale direttamente a Home Assistant.",
+        "data": {
+          "username": "Email / Nome Utente",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossibile connettersi ai server Inim Cloud.",
+      "invalid_auth": "Username o password non validi.",
+      "unknown": "Si è verificato un errore imprevisto."
+    },
+    "abort": {
+      "already_configured": "Questo account Inim Cloud è già configurato."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configura Scenari Allarme",
+        "description": "Seleziona quali scenari della tua centrale Inim corrispondono agli stati standard del pannello allarme di Home Assistant.",
+        "data": {
+          "scenario_disarm": "Disarmato",
+          "scenario_away": "Armato Totale (Fuori Casa)",
+          "scenario_home": "Armato In Casa / Notte",
+          "scenario_night": "Armato Notte",
+          "scenario_vacation": "Armato Vacanza"
+        }
+      }
+    }
+  }
+}

@@ -349,6 +349,15 @@ class InimMQTTBridge:
                         message = await websocket.recv()
                         logger.info(f"WebSocket message received: {message}")
                         
+                        # Check if the message is an error notification (e.g. invalid request)
+                        try:
+                            msg_json = json.loads(message)
+                            if isinstance(msg_json, dict) and "error" in msg_json.get("Code", "").lower():
+                                logger.warning(f"Skipping state refresh due to WebSocket error response: {message}")
+                                continue
+                        except Exception as parse_ex:
+                            logger.debug(f"Could not parse WebSocket message as JSON: {parse_ex}")
+                        
                         # Trigger local refresh from API on any event
                         try:
                             self.fetch_devices()

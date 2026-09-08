@@ -1,0 +1,37 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Inim Cloud Authentication",
+        "description": "Enter your Inim Cloud credentials to connect your alarm panel directly to Home Assistant.",
+        "data": {
+          "username": "Email / Username",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to Inim Cloud server.",
+      "invalid_auth": "Invalid username or password.",
+      "unknown": "Unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This Inim Cloud account is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configure Alarm Scenarios",
+        "description": "Select which Inim scenarios correspond to the standard Home Assistant alarm control panel states.",
+        "data": {
+          "scenario_disarm": "Disarmed (Disarmato)",
+          "scenario_away": "Armed Away (Armato Totale)",
+          "scenario_home": "Armed Home (Armato In Casa)",
+          "scenario_night": "Armed Night (Armato Notte)",
+          "scenario_vacation": "Armed Vacation (Armato Vacanza)"
+        }
+      }
+    }
+  }
+}
