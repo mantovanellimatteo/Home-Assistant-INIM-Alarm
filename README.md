@@ -24,6 +24,8 @@ Eliminates the need for MQTT brokers, legacy bridges, or external daemons.
 * **100% Dynamic Topology:** No hardcoded scenario IDs or panel identifiers. Automatically detects and imports all panels, scenarios, and physical zones linked to your account.
 * **Native Alarm Control Panel:** Provides a standard `alarm_control_panel` entity compatible with Lovelace alarm cards, PIN verification, Apple HomeKit, Google Home, and Amazon Alexa.
 * **Direct Scenario Selector:** A `select` dropdown exposing all panel scenarios for one-click activation.
+* **Dedicated Scenario Buttons:** Individual button entities for each native panel scenario to easily trigger them in dashboards or automations.
+* **Comprehensive Diagnostic Sensors:** Exposes live power supply voltage (`sensor.inim_voltage_<id>`) and real-time event status (`sensor.inim_last_event_<id>`).
 * **Zone & Diagnostic Sensors:** Automatically exposes physical zones (doors, windows, PIR motion sensors) and panel trouble/fault status as `binary_sensor` entities.
 * **Interactive Options Flow:** Customize scenario mappings (`disarmed`, `armed_away`, `armed_home`, `armed_night`, `armed_vacation`) directly from the Home Assistant UI without restarting.
 * **Multilingual:** Full support for both English and Italian.
@@ -55,6 +57,11 @@ This integration was designed from the ground up with a strict security-first ar
 │  │   alarm_control_panel   │   │    select entity    │  │
 │  │   (Native Lovelace /    │   │  (All panel native  │  │
 │  │    HomeKit / Alexa)     │   │      scenarios)     │  │
+│  └────────────┬────────────┘   └──────────┬──────────┘  │
+│               │                           │             │
+│  ┌────────────┴────────────┐   ┌──────────┴──────────┐  │
+│  │     button entities     │   │    sensor entities  │  │
+│  │   (One-click scenarios) │   │ (Last Event/Voltage)│  │
 │  └────────────┬────────────┘   └──────────┬──────────┘  │
 │               │                           │             │
 │               ▼                           ▼             │
@@ -150,81 +157,194 @@ Because every installation has different scenario names and configurations, you 
 
 ---
 
-## Automation Examples
+## Detailed Explanation of Sensor Entities
 
-Home Assistant allows you to automate your Inim alarm either using the user interface or YAML.
+### 1. Last Event Sensor (`sensor.inim_last_event_<device_id>`)
+This sensor acts as a live bulletin for everything happening on your physical alarm panel. Whenever the panel registers an action (such as arming from a keypad, a sensor triggering an alarm, a power restoral, or a tamper alert), Inim Cloud pushes the event over WebSocket and updates this entity instantly.
 
-### 1. Activating a Specific Scenario (Recommended)
+* **State:** Human-readable description of the last event (e.g. `"Disinserimento da Tastiera - Area Ingresso"`, `"Allarme Intrusione - Ingresso"`, `"Centrale: Ripristino Rete 220V"`).
+* **Attributes:**
+  * `category`: Broad classification (e.g. `Arming`, `Alarm`, `Trouble`, `System`).
+  * `event_type`: Specific type identifier (e.g. `Disarm`, `Away`, `ZoneAlarm`, `MainsLoss`).
+  * `is_restore`: Boolean indicating if the event is a restoration (`true`) or an active trigger (`false`).
+  * `event_id`: Unique identifier assigned by Inim Cloud.
+  * `timestamp`: Precise ISO 8601 timestamp of when the event occurred.
+  * `raw_data`: Raw payload string received from the panel.
 
-Each scenario has its own dedicated **Button** entity, making automations extremely straightforward.
-
-**Via UI:**
-* **Action:** Select **Device** > Choose your **Inim Alarm** > Action: **Press `<Scenario Name>`** (e.g. *Press ON TOTALE*).
-
-**Via YAML:**
+**Lovelace Card Example:**
 ```yaml
-alias: "Alarm - Arm Night Scenario at 23:00"
+type: entities
+title: "Centrale Inim - Stato & Eventi"
+entities:
+  - entity: sensor.inim_last_event_12345
+    name: "Ultimo Evento"
+  - type: attribute
+    entity: sensor.inim_last_event_12345
+    attribute: timestamp
+    name: "Orario Evento"
+  - type: attribute
+    entity: sensor.inim_last_event_12345
+    attribute: category
+    name: "Categoria"
+```
+
+### 2. Voltage Sensor (`sensor.inim_voltage_<device_id>`)
+* **State:** Main power supply and backup battery voltage in Volts (e.g. `13.80`).
+* **Unit of Measurement:** `V`
+* **Device Class:** `voltage`
+* **State Class:** `measurement`
+* **Use Case:** Monitor the health of the backup battery and receive alerts if a prolonged power outage drops the voltage below the safe operating threshold (e.g. `< 12.0 V`).
+
+---
+
+## Comprehensive Automation Guide
+
+Home Assistant allows you to automate your Inim alarm either using the graphical user interface (UI) or directly in YAML.
+
+### Method 1: Activating Scenarios via UI or Buttons (Recommended)
+Each scenario has its own dedicated **Button** entity:
+* In UI automations, select **Action** > **Perform Action** > `button.press` > choose the button entity corresponding to your scenario (e.g. `button.on_totale`).
+
+```yaml
+alias: "Inim - Arm Away automatically when leaving home"
 trigger:
-  - trigger: time
-    at: "23:00:00"
+  - trigger: state
+    entity_id: zone.home
+    to: "0"
 action:
   - action: button.press
     target:
-      entity_id: button.no_camere
+      entity_id: button.on_totale
 ```
 
-### 2. Standard Alarm Arming / Disarming
+---
 
-You can also use standard alarm services mapped to your configured scenarios.
+### Method 2: Real-Time Event Bus Notifications (`inim_cloud_event`)
 
-**Via YAML:**
+Whenever the panel emits an event, the integration fires an **`inim_cloud_event`** directly on the Home Assistant Event Bus with the following payload structure:
+
 ```yaml
-alias: "Alarm - Disarm when arriving home"
-trigger:
-  - trigger: zone
-    entity_id: person.admin
-    zone: zone.home
-    event: enter
-action:
-  - action: alarm_control_panel.alarm_disarm
-    target:
-      entity_id: alarm_control_panel.inim_alarm_panel_1202
+event_type: inim_cloud_event
+data:
+  device_id: 12345
+  device_name: "Inim SmartLiving"
+  info: "Disinserimento da Tastiera - Area 1"
+  category: "Arming"
+  type: "Disarm"
+  is_restore: false
+  event_id: 987654
+  timestamp: "2026-09-18T20:25:00+02:00"
 ```
 
-### 3. Send a Notification on Trouble / Tamper
+#### Safe Notification Template (Handles Manual Test Execution)
+> [!TIP]
+> In Home Assistant, clicking **"Run Actions" / "Esegui"** manually in the UI executes only the actions block without triggering the event, which leaves the `trigger` variable undefined (`UndefinedError: 'trigger' is undefined`). 
+> Using the safe template below ensures that manual tests work smoothly while real events display all live event details:
 
-Receive an instant smartphone notification if the central reports any fault or tamper event:
-
-**Via YAML:**
 ```yaml
-alias: "Notification - Inim Alarm Trouble Detected"
-trigger:
-  - trigger: state
-    entity_id: binary_sensor.problema_centrale
-    to: "on"
-action:
-  - action: notify.notify
-    data:
-      title: "Inim Alarm Warning"
-      message: "The alarm panel has reported a fault or tamper state!"
-```
-
-### 4. Real-Time Push Notifications on Central Events (via `inim_cloud_event`)
-
-Whenever any event occurs on your Inim alarm panel (disarming from keypad, zone alarms, user codes), the integration emits an `inim_cloud_event` into the Home Assistant event bus with detailed contextual information.
-
-**Via YAML:**
-```yaml
-alias: "Notification - Inim Real-Time Event"
+alias: "Inim: Real-Time Push Notification"
+description: "Send push notification for any alarm panel event"
 trigger:
   - trigger: event
     event_type: inim_cloud_event
+condition: []
 action:
   - action: notify.notify
     data:
-      title: "Inim Cloud - {{ trigger.event.data.category }}"
-      message: "{{ trigger.event.data.info }} ({{ trigger.event.data.timestamp }})"
+      title: >-
+        {% if trigger is defined and trigger.event is defined %}
+          {{ trigger.event.data.device_name }} ({{ trigger.event.data.category }})
+        {% else %}
+          Inim Cloud (Manual Test)
+        {% endif %}
+      message: >-
+        {% if trigger is defined and trigger.event is defined %}
+          {{ trigger.event.data.info }}
+        {% else %}
+          Manual test execution from Home Assistant UI.
+        {% endif %}
 ```
+
+#### Critical Alarm Notification (Bypasses Silent Mode)
+Receive a high-priority alert on your mobile device if a burglar alarm or fire event occurs:
+
+```yaml
+alias: "Inim: Critical Intrusion Alarm Alert"
+trigger:
+  - trigger: event
+    event_type: inim_cloud_event
+condition:
+  - condition: template
+    value_template: >-
+      {{ trigger.event.data.category == 'Alarm' and not trigger.event.data.is_restore }}
+action:
+  - action: notify.notify
+    data:
+      title: "🚨 INTRUSION ALARM DETECTED!"
+      message: "{{ trigger.event.data.info }}"
+      data:
+        push:
+          sound:
+            name: "critical_alarm.caf"
+            critical: 1
+            volume: 1.0
+```
+
+#### Arming / Disarming Announcement via Smart Speakers
+Announce who armed or disarmed the alarm over media players:
+
+```yaml
+alias: "Inim: Voice Announcement on State Change"
+trigger:
+  - trigger: event
+    event_type: inim_cloud_event
+condition:
+  - condition: template
+    value_template: "{{ trigger.event.data.category in ['Arming', 'Disarm'] }}"
+action:
+  - action: tts.speak
+    target:
+      entity_id: tts.google_it_it
+    data:
+      media_player_entity_id: media_player.living_room_speaker
+      message: "Attenzione: {{ trigger.event.data.info }}"
+```
+
+#### Low Voltage / Battery Warning Alert
+```yaml
+alias: "Inim: Low Battery Voltage Warning"
+trigger:
+  - trigger: numeric_state
+    entity_id: sensor.inim_voltage_12345
+    below: 12.2
+    for:
+      minutes: 5
+action:
+  - action: notify.notify
+    data:
+      title: "⚠️ Inim Battery Warning"
+      message: "Backup battery voltage is low ({{ states('sensor.inim_voltage_12345') }} V)!"
+```
+
+---
+
+### How to Test Events in Home Assistant
+
+To test and verify that your event-based automations work without having to trigger a physical alarm:
+
+1. Open Home Assistant and navigate to **Developer Tools** > **Events** tab.
+2. In the **Fire Event** section:
+   * **Event type:** `inim_cloud_event`
+   * **Event data (YAML):**
+     ```yaml
+     device_name: "Inim SmartLiving"
+     category: "Alarm"
+     type: "Intrusion"
+     info: "Allarme Intrusione - Finestra Salotto"
+     is_restore: false
+     ```
+3. Click **Fire Event**.
+4. Your automation will trigger immediately and send the notification with the simulated parameters.
 
 ---
 
