@@ -13,7 +13,11 @@ PLATFORMS = [
     Platform.SELECT,
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
+    Platform.SENSOR,
 ]
+
+# Event fired on Home Assistant event bus
+EVENT_INIM_CLOUD = "inim_cloud_event"
 
 # Configuration keys
 CONF_CLIENT_ID = "client_id"

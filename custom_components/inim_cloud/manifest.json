@@ -9,5 +9,5 @@
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/mantovanellimatteo/Home-Assistant-INIM-Alarm/issues",
   "requirements": ["cryptography>=3.0"],
-  "version": "0.1.0"
+  "version": "0.1.1"
 }

@@ -6,8 +6,9 @@ from typing import Any, Dict, Optional
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
+from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, EVENT_INIM_CLOUD
 from .inim_api import InimApiClient, InimApiError
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ class InimDataUpdateCoordinator(DataUpdateCoordinator[Dict[int, Dict[str, Any]]]
         self.entry_id = entry_id
         self._is_running = True
         self._ws_task: Optional[asyncio.Task] = None
+        self.last_events: Dict[int, Dict[str, Any]] = {}
 
     async def _async_update_data(self) -> Dict[int, Dict[str, Any]]:
         """Fetch all devices, scenarios, and zone states from Inim Cloud."""
@@ -98,6 +100,7 @@ class InimDataUpdateCoordinator(DataUpdateCoordinator[Dict[int, Dict[str, Any]]]
                     "scenarios": scenarios,
                     "zones": zones,
                     "areas": areas,
+                    "last_event": self.last_events.get(dev_id),
                 }
 
             return parsed_devices
@@ -115,6 +118,51 @@ class InimDataUpdateCoordinator(DataUpdateCoordinator[Dict[int, Dict[str, Any]]]
         async def _on_event(event_data: Dict[str, Any]) -> None:
             """Handle an incoming real-time push event."""
             _LOGGER.debug("Handling real-time push event: %s", event_data)
+
+            if isinstance(event_data, dict):
+                data_block = event_data.get("Data")
+                if isinstance(data_block, dict):
+                    dev_id = (
+                        data_block.get("Device_Id")
+                        or data_block.get("DeviceId")
+                        or (next(iter(self.data.keys())) if self.data else None)
+                    )
+
+                    dev_name = (
+                        self.data.get(dev_id, {}).get("name", f"Inim Central {dev_id}")
+                        if (self.data and dev_id in self.data)
+                        else f"Inim Central {dev_id}"
+                    )
+
+                    info = (
+                        data_block.get("Info")
+                        or data_block.get("Data")
+                        or event_data.get("Type", "Evento Centrale")
+                    )
+                    category = data_block.get("Category", "System")
+                    event_type = data_block.get("Type", event_data.get("Type", ""))
+                    is_restore = bool(data_block.get("IsRestore", False))
+                    event_id = data_block.get("DeviceEvent_Id")
+
+                    event_payload = {
+                        "device_id": dev_id,
+                        "device_name": dev_name,
+                        "info": str(info),
+                        "category": str(category),
+                        "type": str(event_type),
+                        "is_restore": is_restore,
+                        "event_id": event_id,
+                        "raw_data": str(data_block.get("Data", "")),
+                        "timestamp": dt_util.now().isoformat(),
+                    }
+
+                    if dev_id is not None:
+                        self.last_events[dev_id] = event_payload
+
+                    # Fire native Home Assistant event on the event bus
+                    self.hass.bus.async_fire(EVENT_INIM_CLOUD, event_payload)
+                    _LOGGER.info("Fired %s: %s", EVENT_INIM_CLOUD, event_payload)
+
             # Re-fetch data to synchronize full state reliably
             await self.async_refresh()
 

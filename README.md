@@ -1,7 +1,7 @@
 # Inim Cloud Alarm for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/default)
-[![GitHub Release](https://img.shields.io/badge/release-v0.1.0-blue.svg)](https://github.com/mantovanellimatteo/Home-Assistant-INIM-Alarm/releases)
+[![GitHub Release](https://img.shields.io/badge/release-v0.1.1-blue.svg)](https://github.com/mantovanellimatteo/Home-Assistant-INIM-Alarm/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Security: AES-Fernet](https://img.shields.io/badge/Security-AES--Fernet%20Encrypted-green.svg)](#security--privacy)
 [![Protocol: WSS Push](https://img.shields.io/badge/Protocol-TLS%20%2F%20WSS%20Realtime-blue.svg)](#real-time-push-architecture)
@@ -143,6 +143,8 @@ Because every installation has different scenario names and configurations, you 
 | `alarm_control_panel` | `alarm_control_panel.inim_alarm_<id>` | Full alarm control with Arm Away, Arm Home, Arm Night, and Disarm controls. |
 | `button` | `button.<scenario_name>` | Dedicated one-click button for each native scenario (e.g. *ON TOTALE*, *SPENTO*). |
 | `select` | `select.inim_alarm_<id>_scenario` | Dropdown selector displaying and activating any panel scenario directly. |
+| `sensor` | `sensor.inim_last_event_<id>` | Real-time last event description, category, and metadata from Inim Cloud. |
+| `sensor` | `sensor.inim_voltage_<id>` | Power supply and backup battery voltage in Volts (e.g. *13.80 V*). |
 | `binary_sensor` | `binary_sensor.inim_fault_sensor_<id>` | Diagnostic sensor reporting trouble, tamper, or fault states on the panel. |
 | `binary_sensor` | `binary_sensor.inim_zone_<id>_<zone_id>` | Individual physical zone sensors (Door, Window, Motion) with open/alarm states. |
 
@@ -205,6 +207,23 @@ action:
     data:
       title: "Inim Alarm Warning"
       message: "The alarm panel has reported a fault or tamper state!"
+```
+
+### 4. Real-Time Push Notifications on Central Events (via `inim_cloud_event`)
+
+Whenever any event occurs on your Inim alarm panel (disarming from keypad, zone alarms, user codes), the integration emits an `inim_cloud_event` into the Home Assistant event bus with detailed contextual information.
+
+**Via YAML:**
+```yaml
+alias: "Notification - Inim Real-Time Event"
+trigger:
+  - trigger: event
+    event_type: inim_cloud_event
+action:
+  - action: notify.notify
+    data:
+      title: "Inim Cloud - {{ trigger.event.data.category }}"
+      message: "{{ trigger.event.data.info }} ({{ trigger.event.data.timestamp }})"
 ```
 
 ---
