@@ -164,7 +164,7 @@ class InimDataUpdateCoordinator(DataUpdateCoordinator[Dict[int, Dict[str, Any]]]
                     _LOGGER.info("Fired %s: %s", EVENT_INIM_CLOUD, event_payload)
 
             # Re-fetch data to synchronize full state reliably
-            await self.async_refresh()
+            await self.async_request_refresh()
 
         self._ws_task = asyncio.create_task(
             self.client.async_listen_events(_on_event, lambda: self._is_running)
