@@ -125,7 +125,11 @@ class InimApiClient:
         return res.get("Status") == 0
 
     async def _async_call_api(
-        self, method: str, params: Dict[str, Any], retry_on_auth: bool = True
+        self,
+        method: str,
+        params: Dict[str, Any],
+        retry_on_auth: bool = True,
+        retry_on_rate_limit: bool = True,
     ) -> Dict[str, Any]:
         """Execute an authenticated Inim Cloud API request."""
         if not self.token:
@@ -151,17 +155,55 @@ class InimApiClient:
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
                 timeout=aiohttp.ClientTimeout(total=20),
             ) as resp:
-                if resp.status != 200:
-                    raise InimConnectionError(f"HTTP error during {method}: {resp.status}")
                 body = await resp.text()
-                res = json.loads(body)
+                try:
+                    res = json.loads(body)
+                except json.JSONDecodeError:
+                    res = {}
+
+                if resp.status != 200:
+                    if retry_on_auth and self._is_expired_token_response(res):
+                        _LOGGER.warning("Inim session token expired, re-authenticating...")
+                        await self.async_login()
+                        return await self._async_call_api(
+                            method,
+                            params,
+                            retry_on_auth=False,
+                            retry_on_rate_limit=retry_on_rate_limit,
+                        )
+
+                    if resp.status == 429 and retry_on_rate_limit:
+                        retry_after = resp.headers.get("Retry-After")
+                        try:
+                            delay = min(max(float(retry_after), 1), 30)
+                        except (TypeError, ValueError):
+                            delay = 5
+                        _LOGGER.warning(
+                            "Inim Cloud rate limit during %s, retrying in %.0fs",
+                            method,
+                            delay,
+                        )
+                        await asyncio.sleep(delay)
+                        return await self._async_call_api(
+                            method,
+                            params,
+                            retry_on_auth=retry_on_auth,
+                            retry_on_rate_limit=False,
+                        )
+
+                    raise InimConnectionError(f"HTTP error during {method}: {resp.status}")
 
             status = res.get("Status")
             # If session token expired or invalid (e.g. status 1 or status 3)
-            if status in (1, 6) and retry_on_auth:
+            if self._is_expired_token_response(res) and retry_on_auth:
                 _LOGGER.warning("Inim session token expired, re-authenticating...")
                 await self.async_login()
-                return await self._async_call_api(method, params, retry_on_auth=False)
+                return await self._async_call_api(
+                    method,
+                    params,
+                    retry_on_auth=False,
+                    retry_on_rate_limit=retry_on_rate_limit,
+                )
 
             if status != 0:
                 raise InimApiError(f"{method} returned error [status {status}]: {res.get('ErrMsg')}")
@@ -170,6 +212,15 @@ class InimApiClient:
 
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
             raise InimConnectionError(f"Connection failed during {method}: {err}") from err
+
+    @staticmethod
+    def _is_expired_token_response(response: Dict[str, Any]) -> bool:
+        """Return whether an API response indicates an expired session token."""
+        status = response.get("Status")
+        message = str(response.get("ErrMsg", "")).lower()
+        return status in (1, 3, 6, 27) or (
+            "token" in message and ("expired" in message or "invalid" in message)
+        )
 
     async def async_listen_events(
         self,
