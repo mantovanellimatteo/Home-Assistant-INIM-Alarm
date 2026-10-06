@@ -1,7 +1,7 @@
 # Inim Cloud Alarm for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/default)
-[![GitHub Release](https://img.shields.io/badge/release-v0.1.1-blue.svg)](https://github.com/mantovanellimatteo/Home-Assistant-INIM-Alarm/releases)
+[![GitHub Release](https://img.shields.io/badge/release-v0.1.2-blue.svg)](https://github.com/mantovanellimatteo/Home-Assistant-INIM-Alarm/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Security: AES-Fernet](https://img.shields.io/badge/Security-AES--Fernet%20Encrypted-green.svg)](#security--privacy)
 [![Protocol: WSS Push](https://img.shields.io/badge/Protocol-TLS%20%2F%20WSS%20Realtime-blue.svg)](#real-time-push-architecture)
@@ -221,19 +221,22 @@ action:
 
 ### Method 2: Real-Time Event Bus Notifications (`inim_cloud_event`)
 
-Whenever the panel emits an event, the integration fires an **`inim_cloud_event`** directly on the Home Assistant Event Bus with the following payload structure:
+Whenever the panel emits an event (arming, disarming, zone trigger, tamper, fault), the integration parses and enriches the event into human-readable text and fires an **`inim_cloud_event`** directly on the Home Assistant Event Bus with the following payload structure:
 
 ```yaml
 event_type: inim_cloud_event
 data:
   device_id: 12345
-  device_name: "Inim SmartLiving"
-  info: "Disinserimento da Tastiera - Area 1"
-  category: "Arming"
-  type: "Disarm"
+  device_name: "Inim SL 515"
+  info: "Centrale Disinserita (Tutte le aree a riposo)"  # Clear human-readable description
+  description: "Centrale Disinserita (Tutte le aree a riposo)"
+  category: "Disinserimento"                              # Human-friendly category (Inserimento Totale, Allarme, Zona Aperta...)
+  raw_category: "CHANGE"                                 # Raw internal Inim category (ARM_AREA, CHANGE, PIN...)
+  event_class: "status_change"                           # Category class: status_change, area, zone, alarm, tamper, trouble, keypad
+  type: "UPDATE"
   is_restore: false
   event_id: 987654
-  timestamp: "2026-09-18T20:25:00+02:00"
+  timestamp: "2026-10-06T20:38:36+02:00"
 ```
 
 #### Safe Notification Template (Handles Manual Test Execution)
@@ -247,7 +250,11 @@ description: "Send push notification for any alarm panel event"
 trigger:
   - trigger: event
     event_type: inim_cloud_event
-condition: []
+# Optional filter: receive only overall state changes, alarms, tampers, and faults (avoids multiple repetitive area notifications)
+condition:
+  - condition: template
+    value_template: >-
+      {{ trigger.event.data.event_class in ['status_change', 'alarm', 'tamper', 'trouble'] }}
 action:
   - action: notify.notify
     data:

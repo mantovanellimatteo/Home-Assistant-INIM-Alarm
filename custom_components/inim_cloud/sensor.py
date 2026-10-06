@@ -83,6 +83,8 @@ class InimLastEventSensor(CoordinatorEntity[InimDataUpdateCoordinator], SensorEn
             return {
                 "category": last_evt.get("category"),
                 "event_type": last_evt.get("type"),
+                "event_class": last_evt.get("event_class"),
+                "raw_category": last_evt.get("raw_category"),
                 "is_restore": last_evt.get("is_restore"),
                 "event_id": last_evt.get("event_id"),
                 "timestamp": last_evt.get("timestamp"),
