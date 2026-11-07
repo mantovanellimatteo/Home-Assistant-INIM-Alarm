@@ -88,6 +88,23 @@ class InimApiClient:
                     headers={"Content-Type": "application/x-www-form-urlencoded"},
                     timeout=aiohttp.ClientTimeout(total=20),
                 ) as resp:
+                    if resp.status == 429:
+                        retry_after = resp.headers.get("Retry-After")
+                        reset_at = resp.headers.get("X-RateLimit-QuotaResetAt")
+                        quota_used = resp.headers.get("X-RateLimit-QuotaUsed")
+                        quota_limit = resp.headers.get("X-RateLimit-QuotaLimit")
+                        _LOGGER.warning(
+                            "Inim Cloud daily login quota exceeded (HTTP 429: %s/%s calls used). "
+                            "Quota resets at %s (Retry-After: %ss)",
+                            quota_used,
+                            quota_limit,
+                            reset_at,
+                            retry_after,
+                        )
+                        raise InimConnectionError(
+                            f"Limite giornaliero Inim Cloud superato (HTTP 429: {quota_used}/{quota_limit}). "
+                            f"Reset previsto alle ore {reset_at or '00:00:00Z'}"
+                        )
                     if resp.status != 200:
                         raise InimConnectionError(
                             f"HTTP server error during login: {resp.status}"
@@ -172,24 +189,32 @@ class InimApiClient:
                             retry_on_rate_limit=retry_on_rate_limit,
                         )
 
-                    if resp.status == 429 and retry_on_rate_limit:
-                        retry_after = resp.headers.get("Retry-After")
-                        try:
-                            delay = min(max(float(retry_after), 1), 30)
-                        except (TypeError, ValueError):
-                            delay = 5
-                        _LOGGER.warning(
-                            "Inim Cloud rate limit during %s, retrying in %.0fs",
-                            method,
-                            delay,
-                        )
-                        await asyncio.sleep(delay)
-                        return await self._async_call_api(
-                            method,
-                            params,
-                            retry_on_auth=retry_on_auth,
-                            retry_on_rate_limit=False,
-                        )
+                    if resp.status == 429:
+                        if resp.headers.get("X-RateLimit-Type") == "quota_exceeded":
+                            reset_at = resp.headers.get("X-RateLimit-QuotaResetAt")
+                            quota_used = resp.headers.get("X-RateLimit-QuotaUsed")
+                            quota_limit = resp.headers.get("X-RateLimit-QuotaLimit")
+                            raise InimConnectionError(
+                                f"Limite giornaliero Inim Cloud superato ({quota_used}/{quota_limit}). Reset alle {reset_at or '00:00:00Z'}"
+                            )
+                        if retry_on_rate_limit:
+                            retry_after = resp.headers.get("Retry-After")
+                            try:
+                                delay = min(max(float(retry_after), 1), 30)
+                            except (TypeError, ValueError):
+                                delay = 5
+                            _LOGGER.warning(
+                                "Inim Cloud rate limit during %s, retrying in %.0fs",
+                                method,
+                                delay,
+                            )
+                            await asyncio.sleep(delay)
+                            return await self._async_call_api(
+                                method,
+                                params,
+                                retry_on_auth=retry_on_auth,
+                                retry_on_rate_limit=False,
+                            )
 
                     raise InimConnectionError(f"HTTP error during {method}: {resp.status}")
 
